@@ -1,7 +1,9 @@
 # Surfstore
 
 This is the starter code for Project 4: Surfstore.
+
 DO NOT submit the code for your homework. It is meant for display ONLY.
+
 Before you get started, make sure you understand the following 2 things about Go. (These will also be covered in class and in discussions)
 1. Interfaces: They are named collections of method signatures. Here are some good resources to understand interfaces in Go:
     a. https://gobyexample.com/interfaces
