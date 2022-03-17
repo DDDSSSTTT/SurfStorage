@@ -161,8 +161,7 @@ func ClientSync(client RPCClient) {
 	// PrintMetaMap(remoteInfoMap.FileInfoMap)
 
 	if err != nil {
-		log.Printf("[SU165] Remote fileinfomap loading failure")
-		log.Printf(err.Error())
+		log.Printf("remote fileinfomap loading failure")
 		os.Exit(EX_REMOTE)
 	}
 	// Create a temp block
@@ -197,11 +196,11 @@ func ClientSync(client RPCClient) {
 			//Exist a file with same name
 			//version control
 			//As we will update the serever in the next block, we donothing here
-			if meta_data.Version < local_meta_data.Version {
-				//Server V < Local V, do nothing here, upload the local version later
+			if meta_data.Version <= local_meta_data.Version {
+				//Server V <= Local V, do nothing
 				continue
 			} else {
-				//Server V >= Local V, need to download and update this file
+				//Server V > Local V, need to download and update this file
 				log.Printf("Download renewal File from server, Server_V: " + strconv.Itoa(int(meta_data.Version)) +
 					" Local_V: " + strconv.Itoa(int(local_meta_data.Version)))
 				log.Printf(strconv.FormatBool(meta_data.Version <= local_meta_data.Version))
@@ -249,9 +248,7 @@ func ClientSync(client RPCClient) {
 			if meta_data.BlockHashList[0] == "0" {
 				//Upload a Tombstone to the server
 				log.Printf("Upload a Tombstone for: " + file_name)
-				// new_version := meta_data.GetVersion() + 1
-				//Already plused in local map parsing method
-				new_version := meta_data.GetVersion()
+				new_version := meta_data.GetVersion() + 1
 				client.UpdateFile(meta_data, &new_version)
 				continue
 			}
@@ -260,7 +257,7 @@ func ClientSync(client RPCClient) {
 			if err != nil {
 				log.Printf("GenerateBlock Failed")
 			} else {
-				log.Printf("Generated %d blocks", len(this_blocks))
+				log.Printf("get %d blocks", len(this_blocks))
 			}
 
 			for _, each_block := range this_blocks {
@@ -276,17 +273,61 @@ func ClientSync(client RPCClient) {
 
 			}
 			new_version := int32(1)
-			// The problem making code
-			err = client.UpdateFile(meta_data, &new_version)
-			if err != nil {
-				log.Printf(err.Error())
-			}
+			client.UpdateFile(meta_data, &new_version)
 
 		} else {
 			//Server has a file with same name, check the version
-			if meta_data.Version <= remote_meta_data.Version {
-				//The server has a higher or equal version, sync down in previous but, don't upload
+			if meta_data.Version < remote_meta_data.Version {
+				//The server has a higher version, skip
 				continue
+			} else if meta_data.Version == remote_meta_data.Version {
+				unchanged_flag := true
+				for i, hash_local := range meta_data.BlockHashList {
+					if hash_local != remote_meta_data.BlockHashList[i] {
+						unchanged_flag = false
+						break
+					}
+				}
+				if unchanged_flag {
+					log.Printf("Nonchange: no update")
+				} else {
+					log.Printf("Special Condition: Equal")
+					// The case of equal, local_V + 1
+					if meta_data.BlockHashList[0] == "0" && remote_meta_data.BlockHashList[0] != "0" {
+						//Upload a Tombstone to the server
+						log.Printf("Upload a Tombstone for: " + file_name)
+						new_version := meta_data.GetVersion() + 1
+						client.UpdateFile(meta_data, &new_version)
+						continue
+					}
+					//Have unsynced file, upload it
+					this_blocks, err := GenerateBlock(ConcatPath(client.BaseDir, file_name), client.BlockSize)
+					if err != nil {
+						log.Printf("GenerateBlock Failed")
+					} else {
+						log.Printf("get %d blocks", len(this_blocks))
+					}
+					meta_data.BlockHashList = meta_data.BlockHashList[:0]
+					for _, each_block := range this_blocks {
+						log.Printf("this_block " + GetBlockHashString(each_block.GetBlockData()))
+						this_hash_str := GetBlockHashString(each_block.GetBlockData())
+						if err := client.PutBlock(&each_block, blockStoreAddr, &suc.Flag); err != nil {
+							log.Printf("upload block failed, an error occured")
+							log.Fatal(err)
+						} else {
+							// log.Printf("Successfully upload, blockstore now have")
+							// log.Printf(this_hash_str, string(each_block.GetBlockSize()))
+						}
+						meta_data.BlockHashList = append(meta_data.BlockHashList, this_hash_str)
+
+					}
+
+					new_version := meta_data.GetVersion() + 1
+					meta_data.Version = new_version
+					log.Printf("Update this new version!")
+					client.UpdateFile(meta_data, &new_version)
+				}
+
 			} else {
 				log.Printf("Upload renewal File from local, Local_V: " + strconv.Itoa(int(meta_data.Version)) +
 					" Server_V: " + strconv.Itoa(int(remote_meta_data.Version)))
@@ -294,9 +335,7 @@ func ClientSync(client RPCClient) {
 				if meta_data.BlockHashList[0] == "0" {
 					//Upload a Tombstone to the server
 					log.Printf("Upload a Tombstone for: " + file_name)
-					// new_version := meta_data.GetVersion() + 1
-					//Already plused in local map parsing method
-					new_version := meta_data.GetVersion()
+					new_version := meta_data.GetVersion() + 1
 					client.UpdateFile(meta_data, &new_version)
 					continue
 				}
